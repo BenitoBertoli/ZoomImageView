@@ -1,6 +1,6 @@
 /**
  * Copyright 2012 Benito Bertoli
- *
+ * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -109,8 +109,8 @@ public class ZoomImageView extends View {
 	/** Gesture detector for detecting scale gestures. */
 	private ScaleGestureDetector mScaleDetector;
 
-	/** Gesture detector for detecting double taps. */
-	private GestureDetector mDoubleTapDetector;
+	/** Gesture detector for detecting simple gestures (e.g. double-tap, fling). */
+	private GestureDetector mSimpleDetector;
 
 	/**
 	 * Constructor.
@@ -155,13 +155,13 @@ public class ZoomImageView extends View {
 		mImageWidth = bounds.outWidth;
 		mImageHeight = bounds.outHeight;
 		mScaleDetector = new ScaleGestureDetector(context, new ScaleListener());
-		mDoubleTapDetector = new GestureDetector(context,
-				new DoubleTapListener());
+		mSimpleDetector = new GestureDetector(context,
+				new SimpleGestureListener());
 		setOnTouchListener(new OnTouchListener() {
 
 			@Override
 			public boolean onTouch(View v, MotionEvent event) {
-				mDoubleTapDetector.onTouchEvent(event);
+				mSimpleDetector.onTouchEvent(event);
 				mScaleDetector.onTouchEvent(event);
 				PointF pointCurr = new PointF(event.getX(), event.getY());
 
@@ -301,7 +301,7 @@ public class ZoomImageView extends View {
 		}
 	}
 
-	private class DoubleTapListener extends
+	private class SimpleGestureListener extends
 			GestureDetector.SimpleOnGestureListener {
 
 		@Override
