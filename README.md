@@ -6,6 +6,7 @@ ZoomImageView is an Android™ custom View that supports pinch/double-tap zooming 
 You can display very large images without having to worry about java.lang.OutOfMemoryError.
 
 This project is partially based on [TouchImageView][1] by Michael Ortiz.
+
 The technique for efficiently loading large images was inspired by this [answer][2] on [StackOverFlow][3].
 
 Developed By
