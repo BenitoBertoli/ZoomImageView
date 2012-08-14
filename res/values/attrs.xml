@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <declare-styleable name="ZoomImageView">
-        <attr name="android:src"/>
+      <declare-styleable name="ZoomImageView">
+        <attr name="android:src" />
+        <attr name="android:tint" />
+        <attr name="android:drawableAlpha" />
     </declare-styleable>
 </resources>

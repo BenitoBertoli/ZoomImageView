@@ -15,15 +15,19 @@
  */
 package com.benitobertoli.largeimagezoom;
 
+import java.io.FileNotFoundException;
 import java.io.InputStream;
 
 import android.app.ActionBar.LayoutParams;
 import android.content.Context;
 import android.content.res.TypedArray;
-import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
+import android.graphics.ColorFilter;
 import android.graphics.PointF;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffColorFilter;
 import android.graphics.drawable.Drawable;
+import android.net.Uri;
 import android.util.AttributeSet;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
@@ -33,8 +37,8 @@ import android.view.View;
 /**
  * ZoomImageView is an Android™ custom View that supports pinch/double-tap
  * zooming and panning gestures. <br />
- * You can display very large images without having to worry about
- * java.lang.OutOfMemoryError.
+ * You can display very large images (currently from resources) without having
+ * to worry about java.lang.OutOfMemoryError.
  * 
  * @author Benito Bertoli
  * 
@@ -55,20 +59,26 @@ public class ZoomImageView extends View {
 	 */
 	private int mState = STATE_NONE;
 
+	/** Context. */
+	private Context mContext;
+
 	/** Resource Id of the image to be displayed. */
-	private int mImageId;
+	private int mResource = 0;
+
+	/** Uri of the image to be displayed. */
+	private Uri mUri;
 
 	/** InputStream used to open the image. */
 	private InputStream mInputImage;
 
 	/** Drawable object used to display the image. */
-	private Drawable mDrawable;
+	private Drawable mDrawable = null;
 
-	/** Height of image. */
-	private int mImageHeight;
+	/** Height of drawable. */
+	private int mDrawableHeight;
 
-	/** Width of image. */
-	private int mImageWidth;
+	/** Width of drawable. */
+	private int mDrawableWidth;
 
 	/** Height of this View. */
 	private int mViewHeight;
@@ -112,30 +122,87 @@ public class ZoomImageView extends View {
 	/** Gesture detector for detecting simple gestures (e.g. double-tap, fling). */
 	private GestureDetector mSimpleDetector;
 
-	/**
-	 * Constructor.
-	 * 
-	 * @param context
-	 */
+	private ColorFilter mColorFilter;
+	private int mAlpha = 255;
+	private int mViewAlphaScale = 256;
+	private boolean mColorMod = false;
+
 	public ZoomImageView(Context context) {
 		super(context);
-		init(context);
-
+		mContext = context;
 	}
 
-	/**
-	 * Constructor.
-	 * 
-	 * @param context
-	 * @param attrs
-	 */
 	public ZoomImageView(Context context, AttributeSet attrs) {
-		super(context, attrs);
+		this(context, attrs, 0);
+	}
+
+	public ZoomImageView(Context context, AttributeSet attrs, int defStyle) {
+		super(context, attrs, defStyle);
+		mContext = context;
 		TypedArray a = getContext().obtainStyledAttributes(attrs,
 				R.styleable.ZoomImageView);
-		mImageId = a.getResourceId(R.styleable.ZoomImageView_android_src,
-				R.drawable.ic_launcher);
-		init(context);
+		mResource = a.getResourceId(R.styleable.ZoomImageView_android_src, 0);
+		int tint = a.getInt(R.styleable.ZoomImageView_android_tint, 0);
+		if (tint != 0) {
+			setColorFilter(tint);
+		}
+
+		int alpha = a.getInt(R.styleable.ZoomImageView_android_drawableAlpha,
+				255);
+		if (alpha != 255) {
+			setAlpha(alpha);
+		}
+		setDrawablefromResource();
+		a.recycle();
+	}
+
+	private void setDrawablefromResource() {
+		if (mResource != 0) {
+			mInputImage = getResources().openRawResource(mResource);
+			updateDrawable(Drawable.createFromStream(mInputImage, "zoom_image"));
+			invalidate();
+		}
+	}
+
+	private void setDrawablefromUri() {
+		/*
+		 * TODO Find a way to load large images without getting an
+		 * OutOfMemoryError when setting from Uri
+		 */
+		if (mUri != null) {
+			try {
+				mInputImage = mContext.getContentResolver().openInputStream(
+						mUri);
+			} catch (FileNotFoundException e) {
+				e.printStackTrace();
+				return;
+			}
+			Drawable d = Drawable.createFromStream(mInputImage, "zoom_image");
+
+			updateDrawable(d);
+			invalidate();
+		}
+	}
+
+	private void updateDrawable(Drawable d) {
+		if (mDrawable != null) {
+			mDrawable.setCallback(null);
+			unscheduleDrawable(mDrawable);
+		}
+		mDrawable = d;
+		if (d != null) {
+			d.setCallback(this);
+			if (d.isStateful()) {
+				d.setState(getDrawableState());
+			}
+			mDrawableWidth = d.getIntrinsicWidth();
+			mDrawableHeight = d.getIntrinsicHeight();
+			applyColorMod();
+			requestLayout();
+		} else {
+			mDrawableWidth = mDrawableHeight = -1;
+		}
+		invalidate();
 	}
 
 	/**
@@ -143,19 +210,19 @@ public class ZoomImageView extends View {
 	 * 
 	 * @param context
 	 */
-	private void init(Context context) {
-		mInputImage = getResources().openRawResource(mImageId);
-		mDrawable = Drawable.createFromStream(mInputImage, "zoom_image");
-		BitmapFactory.Options bounds = new BitmapFactory.Options();
-		bounds.inJustDecodeBounds = true;
-		BitmapFactory.decodeResource(getResources(), mImageId, bounds);
-		if (bounds.outWidth == -1) {
-			// TODO: Handle Error
+	private void init() {
+		if (mDrawable == null) {
+			invalidate();
+			return;
 		}
-		mImageWidth = bounds.outWidth;
-		mImageHeight = bounds.outHeight;
-		mScaleDetector = new ScaleGestureDetector(context, new ScaleListener());
-		mSimpleDetector = new GestureDetector(context,
+		float scaleX = (float) mViewWidth / mDrawableWidth;
+		float scaleY = (float) mViewHeight / mDrawableHeight;
+		mScaleFit = Math.min(Math.min(scaleX, scaleY), mScaleMax);
+		mScale = Math.min(mScaleFit, 1);
+		mScaleMin = mScale;
+
+		mScaleDetector = new ScaleGestureDetector(mContext, new ScaleListener());
+		mSimpleDetector = new GestureDetector(mContext,
 				new SimpleGestureListener());
 		setOnTouchListener(new OnTouchListener() {
 
@@ -173,6 +240,19 @@ public class ZoomImageView extends View {
 					break;
 
 				case MotionEvent.ACTION_MOVE:
+					if (mDrawableWidth < mViewWidth
+							&& mDrawableHeight < mViewHeight) {
+						if (mDrawableWidth * mScale > mViewWidth
+								|| mDrawableHeight * mScale > mViewHeight) {
+							getParent()
+									.requestDisallowInterceptTouchEvent(true);
+						}
+					} else {
+						if (mScale != mScaleFit) {
+							getParent()
+									.requestDisallowInterceptTouchEvent(true);
+						}
+					}
 					if (mState == STATE_DRAG) {
 						float deltaX = pointCurr.x - mPointLast.x;
 						float deltaY = pointCurr.y - mPointLast.y;
@@ -206,27 +286,35 @@ public class ZoomImageView extends View {
 	@Override
 	protected void onDraw(Canvas canvas) {
 		super.onDraw(canvas);
-		mRight = (int) (mScale * mImageWidth + mLeft);
-		mBottom = (int) (mScale * mImageHeight + mTop);
+		if (mDrawable == null) {
+			return;
+		}
 
-		if (mImageWidth * mScale <= mViewWidth) {
-			mLeft = (int) ((mViewWidth - mImageWidth * mScale) / 2);
+		if (mDrawableWidth == 0 || mDrawableHeight == 0) {
+			return; // nothing to draw (empty bounds)
+		}
+
+		mRight = (int) (mScale * mDrawableWidth + mLeft);
+		mBottom = (int) (mScale * mDrawableHeight + mTop);
+
+		if (mDrawableWidth * mScale <= mViewWidth) {
+			mLeft = (int) ((mViewWidth - mDrawableWidth * mScale) / 2);
 		} else if (mLeft > 0) {
 			mLeft = 0;
 		} else if (mRight < mViewWidth) {
 			mLeft += mViewWidth - mRight;
 		}
 
-		if (mImageHeight * mScale <= mViewHeight) {
-			mTop = (int) ((mViewHeight - mImageHeight * mScale) / 2);
+		if (mDrawableHeight * mScale <= mViewHeight) {
+			mTop = (int) ((mViewHeight - mDrawableHeight * mScale) / 2);
 		} else if (mTop > 0) {
 			mTop = 0;
 		} else if (mBottom < mViewHeight) {
 			mTop += mViewHeight - mBottom;
 		}
 
-		mRight = (int) (mScale * mImageWidth + mLeft);
-		mBottom = (int) (mScale * mImageHeight + mTop);
+		mRight = (int) (mScale * mDrawableWidth + mLeft);
+		mBottom = (int) (mScale * mDrawableHeight + mTop);
 
 		mDrawable.setBounds(mLeft, mTop, mRight, mBottom);
 		mDrawable.draw(canvas);
@@ -237,18 +325,15 @@ public class ZoomImageView extends View {
 		super.onMeasure(widthMeasureSpec, heightMeasureSpec);
 		mViewWidth = getLayoutParams().width;
 		mViewHeight = getLayoutParams().height;
-		if (mViewWidth == LayoutParams.MATCH_PARENT) {
+		if (mViewWidth == LayoutParams.MATCH_PARENT
+				|| mViewWidth == LayoutParams.WRAP_CONTENT) {
 			mViewWidth = MeasureSpec.getSize(widthMeasureSpec);
 		}
-		if (mViewHeight == LayoutParams.MATCH_PARENT) {
+		if (mViewHeight == LayoutParams.MATCH_PARENT
+				|| mViewHeight == LayoutParams.WRAP_CONTENT) {
 			mViewHeight = MeasureSpec.getSize(heightMeasureSpec);
 		}
-		float scaleX = (float) mViewWidth / mImageWidth;
-		float scaleY = (float) mViewHeight / mImageHeight;
-		mScaleFit = Math.min(Math.min(scaleX, scaleY), mScaleMax);
-		mScale = Math.min(mScaleFit, 1);
-		mScaleMin = mScale;
-
+		init();
 	}
 
 	public void setScaleMax(float mScaleMax) {
@@ -281,7 +366,7 @@ public class ZoomImageView extends View {
 		@Override
 		public boolean onScale(ScaleGestureDetector detector) {
 			float mScaleFactor = (float) Math.min(
-					Math.max(.95f, detector.getScaleFactor()), 1.05);
+					Math.max(.95f, detector.getScaleFactor()), 1.5);
 			float origScale = mScale;
 			origX = (int) ((detector.getFocusX() - mLeft) / mScale);
 			origY = (int) ((detector.getFocusY() - mTop) / mScale);
@@ -306,11 +391,12 @@ public class ZoomImageView extends View {
 
 		@Override
 		public boolean onDoubleTap(MotionEvent e) {
-			if (mImageWidth == mViewWidth && mImageHeight == mViewHeight) {
-				// if image dimensions are equal view dimensions do
+			if (mDrawableWidth == mViewWidth && mDrawableHeight == mViewHeight) {
+				// if image dimensions are equal to view dimensions do
 				// nothing
 				return true;
-			} else if (mImageWidth < mViewWidth && mImageHeight < mViewHeight) {
+			} else if (mDrawableWidth < mViewWidth
+					&& mDrawableHeight < mViewHeight) {
 				if (mScale != 1) {
 					toOriginalScale(e, false);
 				} else {
@@ -323,6 +409,13 @@ public class ZoomImageView extends View {
 					toScaleFit(e, false);
 				}
 			}
+			return true;
+		}
+
+		@Override
+		public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX,
+				float velocityY) {
+			// Get velocity values
 			return true;
 		}
 
@@ -471,6 +564,100 @@ public class ZoomImageView extends View {
 
 			}
 		});
+	}
+
+	public void setImageResource(int resId) {
+		this.mResource = resId;
+		setDrawablefromResource();
+	}
+
+	public void setImageUri(Uri uri) {
+		if (mResource != 0
+				|| (mUri != uri && (uri == null || mUri == null || !uri
+						.equals(mUri)))) {
+			updateDrawable(null);
+			mResource = 0;
+			this.mUri = uri;
+			setDrawablefromUri();
+		}
+	}
+
+	/**
+	 * Sets a drawable as the content of this ImageView.
+	 * 
+	 * @param drawable
+	 *            The drawable to set
+	 */
+	public void setImageDrawable(Drawable drawable) {
+		if (mDrawable != drawable) {
+			mResource = 0;
+			mUri = null;
+			updateDrawable(drawable);
+		}
+	}
+
+	/**
+	 * Set a tinting option for the image.
+	 * 
+	 * @param color
+	 *            Color tint to apply.
+	 * @param mode
+	 *            How to apply the color. The standard mode is
+	 *            {@link PorterDuff.Mode#SRC_ATOP}
+	 */
+	public final void setColorFilter(int color, PorterDuff.Mode mode) {
+		setColorFilter(new PorterDuffColorFilter(color, mode));
+	}
+
+	/**
+	 * Set a tinting option for the image. Assumes
+	 * {@link PorterDuff.Mode#SRC_ATOP} blending mode.
+	 * 
+	 * @param color
+	 *            Color tint to apply.
+	 */
+	public final void setColorFilter(int color) {
+		setColorFilter(color, PorterDuff.Mode.SRC_ATOP);
+	}
+
+	public final void clearColorFilter() {
+		setColorFilter(null);
+	}
+
+	/**
+	 * Apply an arbitrary colorfilter to the image.
+	 * 
+	 * @param cf
+	 *            the colorfilter to apply (may be null)
+	 */
+	public void setColorFilter(ColorFilter cf) {
+		if (mColorFilter != cf) {
+			mColorFilter = cf;
+			mColorMod = true;
+			applyColorMod();
+			invalidate();
+		}
+	}
+
+	public void setAlpha(int alpha) {
+		alpha &= 0xFF; // keep it legal
+		if (mAlpha != alpha) {
+			mAlpha = alpha;
+			mColorMod = true;
+			applyColorMod();
+			invalidate();
+		}
+	}
+
+	private void applyColorMod() {
+		// Only mutate and apply when modifications have occurred. This should
+		// not reset the mColorMod flag, since these filters need to be
+		// re-applied if the Drawable is changed.
+		if (mDrawable != null && mColorMod) {
+			mDrawable = mDrawable.mutate();
+			mDrawable.setColorFilter(mColorFilter);
+			mDrawable.setAlpha(mAlpha * mViewAlphaScale >> 8);
+		}
 	}
 
 }
