@@ -3,10 +3,9 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent" >
 
-    <com.benitobertoli.largeimagezoom.ZoomImageView     
+    <com.benitobertoli.largeimagezoom.ZoomImageView 
         android:id="@+id/zoomImageView"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" 
-        android:src="@drawable/huge_image"  />
+        android:layout_height="match_parent"  />
 
 </RelativeLayout>
