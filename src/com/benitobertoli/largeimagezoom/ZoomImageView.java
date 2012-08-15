@@ -35,10 +35,8 @@ import android.view.ScaleGestureDetector;
 import android.view.View;
 
 /**
- * ZoomImageView is an Android™ custom View that supports pinch/double-tap
- * zooming and panning gestures. <br />
- * You can display very large images (currently from resources) without having
- * to worry about java.lang.OutOfMemoryError.
+ * ZoomImageView is an Androidï¿½ custom View that supports pinch/double-tap
+ * zooming and panning gestures.
  * 
  * @author Benito Bertoli
  * 
